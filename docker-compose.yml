@@ -1,0 +1,223 @@
+x-airflow-common: &airflow-common
+  image: rappi-airflow:latest
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__FERNET_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow123@postgres:5432/airflow"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW_UID: "50000"
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    AWS_DEFAULT_REGION: us-east-1
+    LOCALSTACK_ENDPOINT: http://localstack:4566
+    APP_DB_HOST: postgres
+    APP_DB_PORT: "5432"
+    APP_DB_NAME: rappi_handoff
+    APP_DB_USER: app
+    APP_DB_PASSWORD: app123
+    S3_RAW_BUCKET: rappi-handoff-raw
+    S3_ARCHIVE_BUCKET: rappi-handoff-archive
+    AIRFLOW_BASE_URL: http://airflow-webserver:8080
+    AIRFLOW_ADMIN_USERNAME: airflow
+    AIRFLOW_ADMIN_PASSWORD: airflow
+    PYTHONPATH: /opt/airflow:/opt/airflow/src
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
+    - ./src:/opt/airflow/src
+    - ./data:/opt/airflow/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+    localstack:
+      condition: service_healthy
+  networks:
+    - handoff_net
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: handoff-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: postgres
+      AIRFLOW_DB_PASSWORD: airflow123
+      APP_DB_PASSWORD: app123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - handoff_net
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: handoff-localstack
+    restart: unless-stopped
+    environment:
+      DEBUG: "0"
+      PERSISTENCE: "1"
+      SERVICES: s3,events,scheduler,iam,sts,secretsmanager
+      AWS_DEFAULT_REGION: us-east-1
+      LS_LOG: info
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LOCALSTACK_AUTH_TOKEN is required in .env}
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/localstack/init:/etc/localstack/init/ready.d
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:4566/_localstack/health | grep -q '\"s3\": \"running\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+    networks:
+      - handoff_net
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: handoff-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -lc
+      - |
+        airflow db migrate && \
+        airflow users create \
+          --username airflow \
+          --firstname Airflow \
+          --lastname Admin \
+          --role Admin \
+          --email airflow@example.com \
+          --password airflow || true && \
+        airflow dags unpause etl_stores_csv || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: handoff-airflow-webserver
+    command: webserver
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: handoff-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: handoff-airflow-triggerer
+    command: triggerer
+    restart: unless-stopped
+
+  infra-init:
+    build:
+      context: .
+      dockerfile: ./docker/infra-init/Dockerfile
+    container_name: handoff-infra-init
+    environment:
+      APP_DB_HOST: postgres
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: rappi_handoff
+      APP_DB_USER: app
+      APP_DB_PASSWORD: app123
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      S3_RAW_BUCKET: rappi-handoff-raw
+      S3_ARCHIVE_BUCKET: rappi-handoff-archive
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    command: ["python", "-m", "src.infra_init"]
+    restart: "no"
+    networks:
+      - handoff_net
+
+  ingest:
+    build:
+      context: .
+      dockerfile: ./docker/ingest/Dockerfile
+    container_name: handoff-ingest
+    environment:
+      APP_DB_HOST: postgres
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: rappi_handoff
+      APP_DB_USER: app
+      APP_DB_PASSWORD: app123
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      S3_RAW_BUCKET: rappi-handoff-raw
+      S3_ARCHIVE_BUCKET: rappi-handoff-archive
+      AIRFLOW_BASE_URL: http://airflow-webserver:8080
+      AIRFLOW_ADMIN_USERNAME: airflow
+      AIRFLOW_ADMIN_PASSWORD: airflow
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_started
+    command: ["uvicorn", "src.ingest.api:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    restart: unless-stopped
+    networks:
+      - handoff_net
+
+  adminer:
+    image: adminer:latest
+    container_name: handoff-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - handoff_net
+    profiles: ["debug"]
+
+volumes:
+  postgres_data:
+  localstack_data:
+
+networks:
+  handoff_net:
+    driver: bridge

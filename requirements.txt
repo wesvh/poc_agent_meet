@@ -1,0 +1,7 @@
+asyncpg==0.31.0
+SQLAlchemy==1.4.52
+pydantic==2.12.2
+aioboto3==15.5.0
+aiofiles==25.1.0
+pytz==2024.1
+python-dotenv==1.2.2
