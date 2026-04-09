@@ -1,4 +1,4 @@
-.PHONY: check-env check-db venv install-local build init up up-full down logs restart trigger-etl etl-status reset-localstack reset-all
+.PHONY: check-env check-db venv install-local build init up up-full down logs restart trigger-etl etl-status reset-localstack reset-all tunnel
 
 check-env:
 	@test -f .env || (echo "Missing .env. Create env and add LOCALSTACK_AUTH_TOKEN." && exit 1)
@@ -58,3 +58,6 @@ etl-status:
 	@curl -s "http://localhost:8080/api/v1/dags/etl_stores_csv/dagRuns" \
 		-u airflow:airflow \
 		| python3 -c "import sys,json; runs=json.load(sys.stdin).get('dag_runs',[]); [print(r['run_id'], r['state']) for r in runs[-5:]]"
+
+tunnel:
+	@./scripts/tunnel.sh

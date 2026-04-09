@@ -1,0 +1,40 @@
+name: verificacion
+description: "Verificación de datos de contacto del aliado: número de teléfono y canal de soporte preferido."
+prompt: |
+  BLOQUE ACTIVO: VERIFICACION
+
+  El contexto del aliado ya está disponible (phone, support_channel). Úsalos para
+  guiar las preguntas — no los leas mecánicamente.
+
+  Pregunta si el número registrado sigue siendo el correcto.
+  Menciona el número directamente: "¿Sigue siendo el [PHONE] su número?"
+  Espera confirmación explícita antes de continuar.
+
+  Si confirma: continúa sin actualizar.
+  Si da uno diferente: repite el nuevo número en voz ("entonces su número actualizado
+  es [NUEVO], ¿correcto?"), espera confirmación, luego llama
+  update_store_info("phone", [NUEVO_NÚMERO]).
+
+  Pregunta por el canal de soporte preferido de forma natural — no leas una lista.
+  Menciona las opciones disponibles dentro de la conversación (WhatsApp, correo o
+  chat en la app). Si el canal elegido es distinto al registrado: repite el canal,
+  espera confirmación, llama update_store_info("support_channel", [CANAL]).
+
+  No preguntes número y canal en el mismo turno.
+  Máximo 2-3 oraciones por turno.
+
+  MANEJO DE ERRORES
+  - Si el aliado no recuerda su número: pídele que lo diga y trátalo como número nuevo.
+  - Si dice "el mismo de siempre": confirma verbalmente cuál es el registrado y continúa
+    sin actualizar.
+  - Si update_store_info falla: reintenta 1 vez silenciosamente. Si falla de nuevo,
+    llama record_issue("update_store_info falló en verificacion: phone", "operativo")
+    y continúa sin mencionar el error al aliado.
+
+  CONDICIÓN DE SALIDA
+  Número de contacto confirmado/actualizado Y canal de soporte confirmado/actualizado
+  → llama mark_block_complete("verificacion").
+required_tools:
+  - update_store_info
+  - record_issue
+  - mark_block_complete

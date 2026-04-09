@@ -48,3 +48,40 @@ class Config:
     MEETING_EVENT_DETAIL_TYPE: str = os.getenv("MEETING_EVENT_DETAIL_TYPE", "MeetingDue")
     MEETING_EVENT_BUS_NAME: str = os.getenv("MEETING_EVENT_BUS_NAME", "default")
     MEETING_LEAD_MINUTES: int = _int_env("MEETING_LEAD_MINUTES", "5")
+
+    # Agent LLM (via LiteLLM)
+    AGENT_ROUTER_MODEL: str = os.getenv("AGENT_ROUTER_MODEL", "openai/gpt-5.4-mini")
+    AGENT_MODEL: str = os.getenv("AGENT_MODEL", "openai/gpt-5.4-nano")
+    AGENT_CHEAP_MODEL: str = os.getenv("AGENT_CHEAP_MODEL", "openai/gpt-5.4-nano")
+    AGENT_TEMPERATURE: float = float(os.getenv("AGENT_TEMPERATURE", "0.7"))
+    AGENT_MAX_TOKENS: int = _int_env("AGENT_MAX_TOKENS", "2048")
+
+    # Langfuse observability
+    LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+    LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+
+    # Voice (STT/TTS)
+    # TTS_BACKEND: "kokoro" (local, default) | "openai" (LiteLLM/OpenAI TTS-1)
+    TTS_BACKEND: str = os.getenv("TTS_BACKEND", "kokoro")
+    TTS_MODEL: str = os.getenv("TTS_MODEL", "openai/tts-1")
+    TTS_VOICE: str = os.getenv("TTS_VOICE", "nova")
+    TTS_FORMAT: str = os.getenv("TTS_FORMAT", "mp3")
+    # Kokoro TTS (used when TTS_BACKEND=kokoro)
+    KOKORO_MODEL_PATH: str = os.getenv("KOKORO_MODEL_PATH", "/models/kokoro-v1.0.onnx")
+    KOKORO_VOICES_PATH: str = os.getenv("KOKORO_VOICES_PATH", "/models/voices-v1.0.bin")
+    KOKORO_VOICE: str = os.getenv("KOKORO_VOICE", "ef_dora")
+    KOKORO_LANG: str = os.getenv("KOKORO_LANG", "es")
+    STT_MODEL: str = os.getenv("STT_MODEL", "whisper-1")
+    STT_LANGUAGE: str = os.getenv("STT_LANGUAGE", "es")
+
+    # Recall.ai — Google Meet / Zoom bot integration
+    RECALL_API_KEY: str = os.getenv("RECALL_API_KEY", "")
+    RECALL_API_BASE_URL: str = os.getenv("RECALL_API_BASE_URL", "https://us-east-1.recall.ai")
+    # Public URL of this server (required for Recall.ai webhooks and output-media page)
+    # For local dev: use ngrok, e.g. https://abc123.ngrok.io
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8002")
+    # URL to share as screenshare when the bot joins a meeting.
+    # Can be any public URL (e.g. https://www.google.com for PoC, or the Portal Partners mockup).
+    # Leave empty to disable screenshare.
+    SCREENSHARE_DEFAULT_URL: str = os.getenv("SCREENSHARE_DEFAULT_URL", "https://www.google.com")

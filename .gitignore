@@ -18,3 +18,4 @@ postgres_data/
 CLAUDE.md
 context.md
 aliados_dataset.csv
+playwright/

@@ -120,3 +120,25 @@ CREATE TABLE IF NOT EXISTS meetings (
 
 CREATE INDEX IF NOT EXISTS idx_meetings_store ON meetings(store_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_scheduled ON meetings(scheduled_at) WHERE status = 'pending';
+
+-- Handoff sessions (agent conversations)
+CREATE TABLE IF NOT EXISTS handoff_sessions (
+    id                  UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+    store_id            TEXT        NOT NULL REFERENCES stores(store_id) ON DELETE CASCADE,
+    meeting_id          UUID        REFERENCES meetings(id) ON DELETE SET NULL,
+    status              TEXT        NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'completed', 'abandoned')),
+    blocks_completed    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    collected_data      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    issues_detected     JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    commitments         JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    transcript          JSONB,
+    summary             TEXT,
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at            TIMESTAMPTZ,
+    turn_count          INT         NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_store ON handoff_sessions(store_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON handoff_sessions(status);

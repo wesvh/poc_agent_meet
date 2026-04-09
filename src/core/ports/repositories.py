@@ -34,6 +34,16 @@ class StoreRepository(Protocol):
         """Replace all schedule days for a store atomically."""
         ...
 
+    # --- Agent methods ---
+
+    async def get_by_id(self, store_id: str) -> dict | None:
+        """Return full store data as dict, or None if not found."""
+        ...
+
+    async def update_field(self, store_id: str, field: str, value: Any) -> None:
+        """Update a single field on a store record."""
+        ...
+
 
 @runtime_checkable
 class MeetingRepository(Protocol):
@@ -50,6 +60,54 @@ class MeetingRepository(Protocol):
         meeting_link: str,
     ) -> Any | None:
         """Return the pending meeting matching the given criteria, or None."""
+        ...
+
+    # --- Agent methods ---
+
+    async def get_pending_by_store_id(self, store_id: str) -> dict | None:
+        """Return the next pending meeting for a store, or None."""
+        ...
+
+    async def update_status(self, meeting_id: str, status: str) -> None:
+        """Update meeting status (pending, completed, cancelled)."""
+        ...
+
+
+@runtime_checkable
+class HandoffSessionRepository(Protocol):
+    """Persistence contract for handoff agent sessions."""
+
+    async def create(self, session_id: str, store_id: str, meeting_id: str | None) -> None:
+        """Create a new handoff session record."""
+        ...
+
+    async def save_transcript(self, session_id: str, messages: list[dict]) -> None:
+        """Persist the full conversation transcript."""
+        ...
+
+    async def save_summary(self, session_id: str, summary: str) -> None:
+        """Save the LLM-generated session summary."""
+        ...
+
+    async def update_status(self, session_id: str, status: str) -> None:
+        """Update session status (active, completed, abandoned)."""
+        ...
+
+    async def update_session_data(
+        self,
+        session_id: str,
+        *,
+        blocks_completed: dict | None = None,
+        collected_data: dict | None = None,
+        issues_detected: list[str] | None = None,
+        commitments: list[str] | None = None,
+        turn_count: int | None = None,
+    ) -> None:
+        """Update session working data (blocks, issues, commitments, etc.)."""
+        ...
+
+    async def get_by_store(self, store_id: str, limit: int = 5) -> list[dict]:
+        """Return recent sessions for a store, newest first."""
         ...
 
 

@@ -23,6 +23,7 @@ from src.infrastructure.db.engine import session_scope
 from src.infrastructure.db.orm import (
     ETLError,
     ETLRun,
+    HandoffSession,
     Meeting,
     StagingStoreRaw,
     Store,
@@ -55,6 +56,43 @@ class SqlAlchemyStoreRepo:
                 await session.execute(StoreScheduleDay.delete_for_store_stmt(store_id))
                 if days:
                     await session.execute(StoreScheduleDay.insert_many_stmt(store_id, days))
+
+    async def get_by_id(self, store_id: str) -> dict | None:
+        async with session_scope() as session:
+            store = await session.get(Store, store_id)
+            if store is None:
+                return None
+            data = {c.name: getattr(store, c.name) for c in Store.__table__.columns}
+            # Attach payment methods
+            methods_result = await session.execute(
+                select(StorePaymentMethod.method).where(StorePaymentMethod.store_id == store_id)
+            )
+            data["payment_methods"] = [r[0] for r in methods_result]
+            # Attach schedule days
+            days_result = await session.execute(
+                select(StoreScheduleDay.day).where(StoreScheduleDay.store_id == store_id)
+            )
+            data["schedule_days"] = [r[0] for r in days_result]
+            # Serialize special types
+            for key, val in data.items():
+                if isinstance(val, (UUID,)):
+                    data[key] = str(val)
+                elif isinstance(val, datetime):
+                    data[key] = val.isoformat()
+                elif hasattr(val, "isoformat"):
+                    data[key] = val.isoformat()
+            return data
+
+    async def update_field(self, store_id: str, field: str, value) -> None:
+        allowed = {c.name for c in Store.__table__.columns} - {"store_id"}
+        if field not in allowed:
+            raise ValueError(f"Cannot update field '{field}' on stores")
+        async with session_scope() as session:
+            async with session.begin():
+                store = await session.get(Store, store_id)
+                if store is None:
+                    raise ValueError(f"Store not found: {store_id}")
+                setattr(store, field, value)
 
 
 class SqlAlchemyMeetingRepo:
@@ -93,6 +131,124 @@ class SqlAlchemyMeetingRepo:
                     Meeting.status == "pending",
                 )
             )
+
+    async def get_pending_by_store_id(self, store_id: str) -> dict | None:
+        async with session_scope() as session:
+            meeting = await session.scalar(
+                select(Meeting)
+                .where(Meeting.store_id == store_id, Meeting.status == "pending")
+                .order_by(Meeting.scheduled_at.asc())
+                .limit(1)
+            )
+            if meeting is None:
+                return None
+            return {
+                "id": str(meeting.id),
+                "store_id": meeting.store_id,
+                "scheduled_at": meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
+                "meeting_link": meeting.meeting_link,
+                "status": meeting.status,
+            }
+
+    async def update_status(self, meeting_id: str, status: str) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                meeting = await session.get(Meeting, UUID(meeting_id))
+                if meeting is None:
+                    raise ValueError(f"Meeting not found: {meeting_id}")
+                meeting.status = status
+                meeting.updated_at = func.now()
+
+
+class SqlAlchemyHandoffSessionRepo:
+    """Implements HandoffSessionRepository using SQLAlchemy async sessions."""
+
+    async def create(self, session_id: str, store_id: str, meeting_id: str | None) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                hs = HandoffSession(
+                    id=UUID(session_id),
+                    store_id=store_id,
+                    meeting_id=UUID(meeting_id) if meeting_id else None,
+                )
+                session.add(hs)
+        log.info("[session-repo] Created handoff session %s for store %s", session_id, store_id)
+
+    async def save_transcript(self, session_id: str, messages: list[dict]) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                hs = await session.get(HandoffSession, UUID(session_id))
+                if hs is None:
+                    raise ValueError(f"Handoff session not found: {session_id}")
+                hs.transcript = messages
+
+    async def save_summary(self, session_id: str, summary: str) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                hs = await session.get(HandoffSession, UUID(session_id))
+                if hs is None:
+                    raise ValueError(f"Handoff session not found: {session_id}")
+                hs.summary = summary
+
+    async def update_status(self, session_id: str, status: str) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                hs = await session.get(HandoffSession, UUID(session_id))
+                if hs is None:
+                    raise ValueError(f"Handoff session not found: {session_id}")
+                hs.status = status
+                if status in ("completed", "abandoned"):
+                    hs.ended_at = func.now()
+
+    async def update_session_data(
+        self,
+        session_id: str,
+        *,
+        blocks_completed: dict | None = None,
+        collected_data: dict | None = None,
+        issues_detected: list[str] | None = None,
+        commitments: list[str] | None = None,
+        turn_count: int | None = None,
+    ) -> None:
+        async with session_scope() as session:
+            async with session.begin():
+                hs = await session.get(HandoffSession, UUID(session_id))
+                if hs is None:
+                    raise ValueError(f"Handoff session not found: {session_id}")
+                if blocks_completed is not None:
+                    hs.blocks_completed = blocks_completed
+                if collected_data is not None:
+                    hs.collected_data = collected_data
+                if issues_detected is not None:
+                    hs.issues_detected = issues_detected
+                if commitments is not None:
+                    hs.commitments = commitments
+                if turn_count is not None:
+                    hs.turn_count = turn_count
+
+    async def get_by_store(self, store_id: str, limit: int = 5) -> list[dict]:
+        async with session_scope() as session:
+            result = await session.execute(
+                select(HandoffSession)
+                .where(HandoffSession.store_id == store_id)
+                .order_by(HandoffSession.created_at.desc())
+                .limit(limit)
+            )
+            sessions = result.scalars().all()
+            return [
+                {
+                    "id": str(hs.id),
+                    "status": hs.status,
+                    "blocks_completed": hs.blocks_completed,
+                    "issues_detected": hs.issues_detected,
+                    "commitments": hs.commitments,
+                    "summary": hs.summary,
+                    "started_at": hs.started_at.isoformat() if hs.started_at else None,
+                    "ended_at": hs.ended_at.isoformat() if hs.ended_at else None,
+                    "turn_count": hs.turn_count,
+                }
+                for hs in sessions
+            ]
 
 
 class SqlAlchemyETLRepo:

@@ -159,3 +159,22 @@ class Meeting(Base):
         return stmt.on_conflict_do_nothing(
             index_elements=[cls.store_id, cls.scheduled_at, cls.meeting_link]
         )
+
+
+class HandoffSession(Base):
+    __tablename__ = "handoff_sessions"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    store_id = Column(Text, ForeignKey("stores.store_id", ondelete="CASCADE"), nullable=False)
+    meeting_id = Column(PG_UUID(as_uuid=True), ForeignKey("meetings.id", ondelete="SET NULL"))
+    status = Column(Text, nullable=False, server_default=text("'active'"))
+    blocks_completed = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    collected_data = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    issues_detected = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    commitments = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    transcript = Column(JSONB)
+    summary = Column(Text)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    ended_at = Column(DateTime(timezone=True))
+    turn_count = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))

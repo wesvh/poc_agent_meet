@@ -201,6 +201,56 @@ services:
     networks:
       - handoff_net
 
+  agent:
+    build:
+      context: .
+      dockerfile: ./docker/agent/Dockerfile
+    container_name: handoff-agent
+    environment:
+      APP_DB_HOST: postgres
+      APP_DB_PORT: "5432"
+      APP_DB_NAME: rappi_handoff
+      APP_DB_USER: app
+      APP_DB_PASSWORD: app123
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      AGENT_MODEL: ${AGENT_MODEL:-openai/gpt-4.1-nano}
+      AGENT_CHEAP_MODEL: ${AGENT_CHEAP_MODEL:-openai/gpt-4.1-nano}
+      AGENT_TEMPERATURE: ${AGENT_TEMPERATURE:-0.7}
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-2048}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-46103f52-db37-4b8e-b88a-0aac1809c229}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-afbc4b53-5a02-4b7a-84fa-109b2446b2f4}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      TTS_BACKEND: ${TTS_BACKEND:-kokoro}
+      KOKORO_MODEL_PATH: ${KOKORO_MODEL_PATH:-/models/kokoro-v1.0.onnx}
+      KOKORO_VOICES_PATH: ${KOKORO_VOICES_PATH:-/models/voices-v1.0.bin}
+      KOKORO_VOICE: ${KOKORO_VOICE:-ef_dora}
+      KOKORO_LANG: ${KOKORO_LANG:-es}
+      TTS_MODEL: ${TTS_MODEL:-openai/tts-1}
+      TTS_VOICE: ${TTS_VOICE:-nova}
+      TTS_FORMAT: ${TTS_FORMAT:-mp3}
+      EDGE_TTS_VOICE: ${EDGE_TTS_VOICE:-es-CO-SalomeNeural}
+      EDGE_TTS_RATE: ${EDGE_TTS_RATE:-+5%}
+      STT_MODEL: ${STT_MODEL:-whisper-1}
+      STT_LANGUAGE: ${STT_LANGUAGE:-es}
+      RECALL_API_KEY: ${RECALL_API_KEY:-}
+      RECALL_API_BASE_URL: ${RECALL_API_BASE_URL:-https://us-east-1.recall.ai}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8002}
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uvicorn", "src.agent.server:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    restart: unless-stopped
+    networks:
+      - handoff_net
+
   adminer:
     image: adminer:latest
     container_name: handoff-adminer
