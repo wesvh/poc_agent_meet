@@ -85,3 +85,7 @@ class Config:
     # Can be any public URL (e.g. https://www.google.com for PoC, or the Portal Partners mockup).
     # Leave empty to disable screenshare.
     SCREENSHARE_DEFAULT_URL: str = os.getenv("SCREENSHARE_DEFAULT_URL", "https://www.google.com")
+    # Internal base URL of the frontend service (used by the agent to send presentation commands).
+    # In Docker: http://frontend:3000 (internal network, bypasses Cloudflare).
+    # In local dev: http://localhost:3000
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://frontend:3000")

@@ -201,6 +201,46 @@ services:
     networks:
       - handoff_net
 
+  cloudflared-agent:
+    build:
+      context: .
+      dockerfile: ./docker/cloudflared/Dockerfile
+    container_name: handoff-tunnel-agent
+    environment:
+      TARGET_URL: http://agent:8002
+      OUTPUT_FILE: /tunnels/agent_url
+    volumes:
+      - tunnel_data:/tunnels
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tunnels/agent_url"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - handoff_net
+
+  cloudflared-frontend:
+    build:
+      context: .
+      dockerfile: ./docker/cloudflared/Dockerfile
+    container_name: handoff-tunnel-frontend
+    environment:
+      TARGET_URL: http://frontend:3000
+      OUTPUT_FILE: /tunnels/frontend_url
+    volumes:
+      - tunnel_data:/tunnels
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tunnels/frontend_url"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - handoff_net
+
   agent:
     build:
       context: .
@@ -238,15 +278,19 @@ services:
       STT_LANGUAGE: ${STT_LANGUAGE:-es}
       RECALL_API_KEY: ${RECALL_API_KEY:-}
       RECALL_API_BASE_URL: ${RECALL_API_BASE_URL:-https://us-east-1.recall.ai}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8002}
+      FRONTEND_BASE_URL: http://frontend:3000
     ports:
       - "8002:8002"
     volumes:
       - ./src:/app/src
+      - tunnel_data:/tunnels
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["uvicorn", "src.agent.server:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+      cloudflared-agent:
+        condition: service_healthy
+      cloudflared-frontend:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - handoff_net
@@ -258,7 +302,6 @@ services:
     container_name: handoff-frontend
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_AGENT_URL: ${PUBLIC_BASE_URL:-http://localhost:8002}
     ports:
       - "3000:3000"
     restart: unless-stopped
@@ -281,6 +324,7 @@ services:
 volumes:
   postgres_data:
   localstack_data:
+  tunnel_data:
 
 networks:
   handoff_net:

@@ -12,6 +12,7 @@ from __future__ import annotations
 from langchain_core.tools import StructuredTool
 
 from src.agent.mcp.tools.meeting_tools import create_meeting_tools
+from src.agent.mcp.tools.presentation_tools import create_presentation_tools
 from src.agent.mcp.tools.session_tools import create_session_tools
 from src.agent.mcp.tools.store_tools import create_store_tools
 
@@ -20,6 +21,7 @@ def create_all_tools(
     store_repo,
     meeting_repo,
     session_repo,
+    store_id: str = "",
 ) -> list[StructuredTool]:
     """Create the full set of Handoff agent tools.
 
@@ -35,4 +37,5 @@ def create_all_tools(
     tools.extend(create_store_tools(store_repo, meeting_repo, session_repo))
     tools.extend(create_session_tools())
     tools.extend(create_meeting_tools(meeting_repo))
+    tools.extend(create_presentation_tools(store_id))
     return tools

@@ -176,7 +176,7 @@ async def _session_core(
     session_id = str(uuid.uuid4())
     log.info("[ws] Connection accepted: store=%s session=%s", store_id, session_id)
 
-    tools = create_all_tools(_store_repo, _meeting_repo, _session_repo)
+    tools = create_all_tools(_store_repo, _meeting_repo, _session_repo, store_id=store_id)
     graph_builder = build_graph(tools)
 
     turn_counter = 0
@@ -702,8 +702,13 @@ async def create_recall_bot(body: dict):
 
     if "screenshare_url" in body:
         screenshare_url = body["screenshare_url"] or None
+    elif Config.SCREENSHARE_DEFAULT_URL:
+        # Append store_id as session_id so the frontend poll channel matches
+        # the agent's presentation tool, which always uses store_id.
+        base_ss = Config.SCREENSHARE_DEFAULT_URL.rstrip("/")
+        screenshare_url = f"{base_ss}?session_id={store_id}"
     else:
-        screenshare_url = Config.SCREENSHARE_DEFAULT_URL or None
+        screenshare_url = None
 
     if not meeting_url or not store_id:
         return JSONResponse({"error": "meeting_url and store_id are required"}, status_code=400)

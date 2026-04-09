@@ -21,3 +21,7 @@ RUN mkdir -p /models && \
     curl -fsSL "${KOKORO_RELEASE}/voices-v1.0.bin"    -o /models/voices-v1.0.bin
 
 COPY src/ src/
+COPY docker/agent/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
