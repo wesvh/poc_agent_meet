@@ -5,6 +5,9 @@ import {
   unregisterSessionClient,
 } from "@/lib/ai-socket-server-state"
 
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
+
 const VALID_TOKENS = ["rappi_ai_agent_2024", "alia_handoff_token"]
 
 // Server-Sent Events endpoint for real-time commands
@@ -27,18 +30,24 @@ export async function GET(request: NextRequest) {
       const clientId = crypto.randomUUID()
       const connectionData = registerSessionClient(sessionId, token, clientId, controller)
 
+      // 8 KB padding across multiple lines — forces Cloudflare quick tunnels to flush
+      for (let i = 0; i < 80; i++) {
+        controller.enqueue(encoder.encode(`: padding ${String(i).padStart(2, "0")} ${"x".repeat(96)}\n`))
+      }
+      controller.enqueue(encoder.encode("\n"))
+
       controller.enqueue(
         encoder.encode(`event: connected\ndata: ${JSON.stringify(connectionData)}\n\n`)
       )
 
-      // Keep-alive interval
+      // Keep-alive every 1 s — flushes Cloudflare's proxy buffer continuously
       const keepAliveInterval = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: keepalive ${Date.now()}\n\n`))
         } catch {
           clearInterval(keepAliveInterval)
         }
-      }, 15000)
+      }, 1000)
 
       // Cleanup on close
       request.signal.addEventListener("abort", () => {
@@ -50,10 +59,11 @@ export async function GET(request: NextRequest) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, no-transform",
       "Connection": "keep-alive",
       "X-Accel-Buffering": "no",
+      "CF-No-Buffer": "1",
     },
   })
 }

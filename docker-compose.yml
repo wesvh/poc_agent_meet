@@ -251,6 +251,20 @@ services:
     networks:
       - handoff_net
 
+  frontend:
+    build:
+      context: .
+      dockerfile: ./docker/frontend/Dockerfile
+    container_name: handoff-frontend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_AGENT_URL: ${PUBLIC_BASE_URL:-http://localhost:8002}
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - handoff_net
+
   adminer:
     image: adminer:latest
     container_name: handoff-adminer

@@ -84,7 +84,7 @@ export function usePresentationControl(options: UsePresentationControlOptions) {
   const [isConnected, setIsConnected] = useState(false)
   const [commandHistory, setCommandHistory] = useState<AICommand[]>([])
 
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const commandQueueRef = useRef<AICommand[]>([])
   const processingRef = useRef(false)
   const processCommandRef = useRef<(command: AICommand) => Promise<AIResponse>>(async () => ({
@@ -550,79 +550,45 @@ export function usePresentationControl(options: UsePresentationControlOptions) {
   }, [])
 
   // ===========================================================================
-  // SSE CONNECTION
+  // POLLING CONNECTION
   // ===========================================================================
 
   const connect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
     }
 
-    const url = `/api/ai-socket/sse?session_id=${sessionId}&token=rappi_ai_agent_2024`
-    const eventSource = new EventSource(url)
-    eventSourceRef.current = eventSource
+    const url = `/api/ai-socket/poll?session_id=${sessionId}&token=rappi_ai_agent_2024`
 
-    const handleCommandEvent = async (event: MessageEvent<string>) => {
+    const poll = async () => {
       try {
-        const data = JSON.parse(event.data)
-
-        if (data.type === "ping") return
-
-        const command = validateCommand(data)
-        if (command) {
-          setCommandHistory(h => [...h.slice(-19), command])
-          enqueueCommand(command)
+        const res = await fetch(url, { cache: "no-store" })
+        if (!res.ok) {
+          setIsConnected(false)
+          return
         }
-      } catch (error) {
-        console.error("[Presentation] Error processing message:", error)
-      }
-    }
-
-    const onConnectedEvent: EventListener = (event) => {
-      if (!(event instanceof MessageEvent)) return
-
-      try {
-        const data = JSON.parse(event.data)
+        const { commands } = await res.json() as { commands: unknown[] }
         setIsConnected(true)
-        console.log("[Presentation] Session established:", data.session_id)
-      } catch (error) {
-        console.error("[Presentation] Error processing connected event:", error)
+        for (const raw of commands) {
+          const command = validateCommand(raw)
+          if (command) {
+            setCommandHistory(h => [...h.slice(-19), command])
+            enqueueCommand(command)
+          }
+        }
+      } catch {
+        setIsConnected(false)
       }
     }
 
-    const onCommandEvent: EventListener = (event) => {
-      if (!(event instanceof MessageEvent)) return
-      void handleCommandEvent(event)
-    }
-
-    eventSource.onopen = () => {
-      setIsConnected(true)
-    }
-
-    eventSource.onmessage = (event) => {
-      void handleCommandEvent(event)
-    }
-
-    eventSource.addEventListener("connected", onConnectedEvent)
-    eventSource.addEventListener("command", onCommandEvent)
-
-    eventSource.onerror = () => {
-      setIsConnected(false)
-      console.log("[Presentation] SSE disconnected, reconnecting...")
-
-      // Reconnect after 2 seconds
-      setTimeout(() => {
-        if (eventSourceRef.current === eventSource) {
-          connect()
-        }
-      }, 2000)
-    }
+    void poll()
+    pollIntervalRef.current = setInterval(() => { void poll() }, 1000)
   }, [sessionId, enqueueCommand])
 
   const disconnect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
     }
     setIsConnected(false)
   }, [])

@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
+  allowedDevOrigins: ['*.trycloudflare.com'],
   typescript: {
     ignoreBuildErrors: true,
   },

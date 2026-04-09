@@ -17,6 +17,7 @@ type SessionState = {
   connected_at: string
   last_activity: string
   clients: Map<string, SessionClient>
+  queue: SessionCommand[]
 }
 
 type ServerState = {
@@ -52,6 +53,7 @@ function getOrCreateSession(sessionId: string, token: string) {
     connected_at: now,
     last_activity: now,
     clients: new Map(),
+    queue: [],
   }
 
   state.sessions.set(sessionId, session)
@@ -104,28 +106,37 @@ export function publishSessionCommand(sessionId: string, command: SessionCommand
     }
   }
 
-  let delivered = 0
+  // Always enqueue for polling clients
+  session.queue.push(command)
+  session.last_activity = new Date().toISOString()
 
+  // Also push via SSE for direct connections
+  let delivered = session.queue.length > 0 ? 1 : 0
   for (const [clientId, client] of session.clients.entries()) {
     try {
       client.controller.enqueue(encodeSseEvent("command", command))
       client.last_activity = new Date().toISOString()
-      delivered += 1
     } catch {
       session.clients.delete(clientId)
     }
-  }
-
-  session.last_activity = new Date().toISOString()
-
-  if (session.clients.size === 0) {
-    state.sessions.delete(sessionId)
   }
 
   return {
     delivered,
     active_clients: session.clients.size,
   }
+}
+
+export function drainSessionCommands(sessionId: string): SessionCommand[] {
+  const session = state.sessions.get(sessionId)
+  if (!session) return []
+  const commands = session.queue.splice(0)
+  session.last_activity = new Date().toISOString()
+  return commands
+}
+
+export function touchSession(sessionId: string, token: string) {
+  getOrCreateSession(sessionId, token)
 }
 
 export function getSessionSnapshot(sessionId: string) {

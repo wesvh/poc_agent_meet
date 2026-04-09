@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Node / Frontend
+src/frontend/node_modules/
+src/frontend/.next/
+src/frontend/.turbo/
+
+# Airflow runtime
+airflow/logs/
+airflow/plugins/
+
+# Data / secrets
+.env
+data/
+*.csv
+
+# Dev
+.git/
+.DS_Store

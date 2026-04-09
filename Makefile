@@ -1,4 +1,4 @@
-.PHONY: check-env check-db venv install-local build init up up-full down logs restart trigger-etl etl-status reset-localstack reset-all tunnel
+.PHONY: check-env check-db venv install-local build init up up-full down logs restart trigger-etl etl-status reset-localstack reset-all tunnel tunnel-frontend
 
 check-env:
 	@test -f .env || (echo "Missing .env. Create env and add LOCALSTACK_AUTH_TOKEN." && exit 1)
@@ -61,3 +61,6 @@ etl-status:
 
 tunnel:
 	@./scripts/tunnel.sh
+
+tunnel-frontend:
+	@./scripts/tunnel-frontend.sh
