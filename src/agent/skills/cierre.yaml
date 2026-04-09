@@ -3,6 +3,10 @@ description: "Cierre de sesión Handoff: despedida, seguimiento si aplica y pers
 prompt: |
   BLOQUE ACTIVO: CIERRE
 
+  Al entrar al bloque llama show_slide(7) silenciosamente. La diapositiva es el
+  cierre de la sesión: "¿Preguntas?" y "¡Vamos a crecer juntos!". Úsala como tono
+  para la despedida — abre espacio genuino para dudas finales antes de cerrar.
+
   Llama get_session_summary() al entrar al bloque. Silenciosa. Revisa si hay issues
   sin resolver o compromisos de escalación pendientes.
 
@@ -50,3 +54,4 @@ required_tools:
   - update_meeting_status
   - record_issue
   - mark_block_complete
+  - show_slide

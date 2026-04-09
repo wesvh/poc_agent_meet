@@ -130,11 +130,11 @@ export function LoginForm({ onForgotPassword, onRegister }: LoginFormProps) {
           </div>
         </form>
 
-        <div className="mt-6 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+       {/*  <div className="mt-6 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
           <p className="font-medium">Credenciales de prueba:</p>
           <p>Email: admin@latoscana.com</p>
           <p>Contraseña: demo123</p>
-        </div>
+        </div> */}
       </CardContent>
     </Card>
   )

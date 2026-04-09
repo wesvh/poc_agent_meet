@@ -29,6 +29,10 @@ export type AICommandType =
   | "simulate_login"     // Auto-fill and submit login
   | "simulate_logout"    // Logout the user
   
+  // Presentation
+  | "show_slide"         // Show a slide full-screen (slide 1-7)
+  | "hide_slide"         // Hide the current slide
+
   // State
   | "get_state"          // Get current app state
   | "wait"               // Wait for X milliseconds
@@ -109,6 +113,10 @@ export interface WaitPayload {
   ms: number
 }
 
+export interface ShowSlidePayload {
+  slide: number  // 1-7
+}
+
 // =============================================================================
 // COMMAND STRUCTURE
 // =============================================================================
@@ -183,6 +191,8 @@ const VALID_COMMANDS: AICommandType[] = [
   "clear_overlays",
   "simulate_login",
   "simulate_logout",
+  "show_slide",
+  "hide_slide",
   "get_state",
   "wait",
 ]

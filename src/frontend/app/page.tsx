@@ -110,9 +110,14 @@ function AppContent() {
   const [activeTool, setActiveTool] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState("demo1")
+  // When session_id is present in URL the page is being used as a screenshare surface.
+  // Pre-load slide 1 so it's visible immediately on page load, before the SSE command arrives.
+  const [initialSlide, setInitialSlide] = useState<number | null>(null)
 
   useEffect(() => {
-    setSessionId(resolveSessionId())
+    const params = new URLSearchParams(window.location.search)
+    setSessionId(params.get("session_id") || resolveSessionId())
+    if (params.has("session_id")) setInitialSlide(1)
   }, [])
 
   const handleSessionChange = useCallback((nextSessionId: string | null) => {
@@ -185,6 +190,7 @@ function AppContent() {
   // Presentation control hook
   const presentation = usePresentationControl({
     sessionId,
+    initialSlide,
     onNavigate: handleNavigate,
     onSetAuthView: handleSetAuthView,
     onLogin: handleLogin,
@@ -214,13 +220,13 @@ function AppContent() {
     <>
       {/* Main Content */}
       {isAuthenticated ? (
-        <Dashboard 
-          currentSection={currentSection} 
+        <Dashboard
+          currentSection={currentSection}
           setCurrentSection={setCurrentSection}
         />
       ) : (
-        <AuthScreen 
-          authView={authView} 
+        <AuthScreen
+          authView={authView}
           setAuthView={setAuthView}
         />
       )}
@@ -232,6 +238,22 @@ function AppContent() {
         cards={presentation.cards}
         onDismissCard={presentation.removeCard}
       />
+
+      {/* Slide full-screen overlay — shown when agent calls show_slide */}
+      {presentation.currentSlide !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+          style={{ pointerEvents: "none" }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/slides/${presentation.currentSlide}.jpeg`}
+            alt={`Slide ${presentation.currentSlide}`}
+            className="max-w-full max-h-full object-contain"
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
+        </div>
+      )}
 
       {/* Debug Panel - only visible with ?ai_debug=true */}
       <AIDebugPanel

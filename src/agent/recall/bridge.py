@@ -156,6 +156,10 @@ class RecallBotSession:
         self.recall_bot_id: str = ""
         self.screenshare_url: str | None = None
 
+        # True after the very first audio chunk is sent — used to apply a one-time startup
+        # delay so the screenshare has time to appear before the agent starts speaking.
+        self.first_audio_sent: bool = False
+
         self.agent_inbox: asyncio.Queue = asyncio.Queue()
         self._output_ws: WebSocket | None = None
         self._output_ws_ready: asyncio.Event = asyncio.Event()

@@ -3,6 +3,10 @@ description: "Diagnóstico del estado operativo del aliado en plataformas Rappi.
 prompt: |
   BLOQUE ACTIVO: DIAGNOSTICO
 
+  Al entrar al bloque llama show_slide(3) silenciosamente. La diapositiva muestra
+  el objetivo principal: quedar listo para recibir pedidos el mismo día. Úsalo como
+  gancho natural antes de preguntar por el estado actual.
+
   El contexto incluye flags de acceso del aliado. Úsalos para guiar las preguntas,
   no para leerlos en voz alta.
 
@@ -36,3 +40,4 @@ prompt: |
 required_tools:
   - record_issue
   - mark_block_complete
+  - show_slide

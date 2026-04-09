@@ -3,6 +3,10 @@ description: "Verificación y actualización de datos operativos de la tienda: h
 prompt: |
   BLOQUE ACTIVO: CONFIGURACION
 
+  Al entrar al bloque llama show_slide(5) silenciosamente. La diapositiva muestra
+  el checklist de activación: acceso, horarios, menú/fotos, finanzas, orden de prueba.
+  Menciona naturalmente que van a revisar esa lista juntos.
+
   El contexto incluye los datos operativos actuales (schedule_open, schedule_close,
   schedule_days, payment_methods, address, city). Úsalos como punto de partida —
   no los leas mecánicamente.
@@ -47,3 +51,4 @@ required_tools:
   - update_store_info
   - record_issue
   - mark_block_complete
+  - show_slide

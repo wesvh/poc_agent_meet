@@ -212,6 +212,67 @@ def create_presentation_tools(store_id: str) -> list[StructuredTool]:
             "portal_section": _portal_position["section"],
         }
 
+    async def _show_slide(slide_number: int) -> dict:
+        """Display a presentation slide full-screen on the shared frontend.
+
+        Slides are rendered by the frontend (Portal Partners screenshare page),
+        covering the entire screen. All meeting participants see the slide immediately.
+        Use this to advance through the 7-slide deck during the session.
+
+        Slide map (block → slide):
+          1 — Portada / Bienvenida        (saludo — shown automatically on join)
+          2 — Agenda de la sesión         (verificacion)
+          3 — Objetivo principal          (diagnostico)
+          4 — RappiAliados vs Portal      (capacitacion) ← start_screenshare() for live demo
+          5 — Checklist de activación     (configuracion)
+          6 — Condiciones y próximos      (compromiso)
+          7 — Cierre y preguntas          (cierre)
+
+        Rules:
+        - Advance to the next slide BEFORE explaining that section's content.
+        - For slides 4, 5, or 7: if the ally wants to see the live portal, call
+          start_screenshare() — this hides the slide and shows the live portal.
+        - Do NOT skip slides unless the ally explicitly asks to.
+
+        Args:
+            slide_number: Integer 1–7.
+
+        Returns:
+            {"status": "shown", "slide": N, "portal_suggested": bool} on success.
+            {"status": "error", "reason": "..."} if slide out of range.
+        """
+        from src.agent.recall.slides import PORTAL_SLIDES, TOTAL_SLIDES
+
+        if not (1 <= slide_number <= TOTAL_SLIDES):
+            return {"status": "error", "reason": f"slide {slide_number} out of range (1-{TOTAL_SLIDES})"}
+
+        base = Config.FRONTEND_BASE_URL.rstrip("/")
+        url = f"{base}/api/ai-socket/sse?session_id={store_id}&token={_TOKEN}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.post(url, json={
+                    "cmd": "show_slide",
+                    "payload": {"slide": slide_number},
+                    "request_id": f"slide_{store_id}_{slide_number}",
+                })
+                if not resp.is_success:
+                    log.warning(
+                        "[presentation] show_slide %d HTTP %d: %s",
+                        slide_number, resp.status_code, resp.text[:120],
+                    )
+                    return {"status": "error", "reason": f"HTTP {resp.status_code}"}
+            except Exception as exc:
+                log.error("[presentation] show_slide %d: %s", slide_number, exc)
+                return {"status": "error", "reason": str(exc)}
+
+        log.info("[presentation] show_slide %d sent to frontend for store=%s", slide_number, store_id)
+        return {
+            "status": "shown",
+            "slide": slide_number,
+            "portal_suggested": slide_number in PORTAL_SLIDES,
+        }
+
     async def _start_screenshare() -> dict:
         """Activate the screenshare in the current Recall.ai meeting session.
 
@@ -239,15 +300,24 @@ def create_presentation_tools(store_id: str) -> list[StructuredTool]:
             log.info("[presentation] start_screenshare: no screenshare_url configured for store=%s", store_id)
             return {"status": "skipped", "reason": "screenshare_url not configured"}
 
-        from src.agent.recall.client import RecallClient
-        client = RecallClient()
-        await client.update_output_media(session.recall_bot_id, screenshare_url=session.screenshare_url)
-        log.info("[presentation] start_screenshare activated: store=%s url=%s", store_id, session.screenshare_url)
+        # Hide the current slide so the live portal is visible on the screenshare.
+        base = Config.FRONTEND_BASE_URL.rstrip("/")
+        sse_url = f"{base}/api/ai-socket/sse?session_id={store_id}&token={_TOKEN}"
+        async with httpx.AsyncClient(timeout=5.0) as client_http:
+            try:
+                await client_http.post(sse_url, json={
+                    "cmd": "hide_slide",
+                    "payload": {},
+                    "request_id": f"hide_slide_{store_id}",
+                })
+            except Exception as exc:
+                log.warning("[presentation] hide_slide request failed: %s", exc)
 
         # Immediately log in to the portal so the ally sees the dashboard,
         # not the login page, as soon as the screenshare appears.
         await _demo_portal([])
 
+        log.info("[presentation] start_screenshare: portal live for store=%s", store_id)
         return {"status": "activated", "screenshare_url": session.screenshare_url}
 
     return [
@@ -265,5 +335,10 @@ def create_presentation_tools(store_id: str) -> list[StructuredTool]:
             coroutine=_start_screenshare,
             name="start_screenshare",
             description=_start_screenshare.__doc__,
+        ),
+        StructuredTool.from_function(
+            coroutine=_show_slide,
+            name="show_slide",
+            description=_show_slide.__doc__,
         ),
     ]

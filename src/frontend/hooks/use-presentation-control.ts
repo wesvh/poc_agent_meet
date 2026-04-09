@@ -39,10 +39,12 @@ interface PresentationState {
   isTyping: boolean
   commandQueue: AICommand[]
   isProcessing: boolean
+  currentSlide: number | null
 }
 
 interface UsePresentationControlOptions {
   sessionId: string
+  initialSlide?: number | null
   onNavigate?: (section: string) => boolean
   onSetAuthView?: (view: string) => void
   onLogin?: (email: string, password: string) => Promise<boolean>
@@ -61,6 +63,7 @@ interface UsePresentationControlOptions {
 export function usePresentationControl(options: UsePresentationControlOptions) {
   const {
     sessionId,
+    initialSlide = null,
     onNavigate,
     onSetAuthView,
     onLogin,
@@ -79,10 +82,18 @@ export function usePresentationControl(options: UsePresentationControlOptions) {
     isTyping: false,
     commandQueue: [],
     isProcessing: false,
+    currentSlide: initialSlide ?? null,
   })
 
   const [isConnected, setIsConnected] = useState(false)
   const [commandHistory, setCommandHistory] = useState<AICommand[]>([])
+
+  // Sync initialSlide once it resolves (it starts null and may update after mount)
+  useEffect(() => {
+    if (initialSlide !== null) {
+      setState(s => ({ ...s, currentSlide: s.currentSlide ?? initialSlide }))
+    }
+  }, [initialSlide])
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const commandQueueRef = useRef<AICommand[]>([])
@@ -483,6 +494,14 @@ export function usePresentationControl(options: UsePresentationControlOptions) {
         case "get_state":
           return { type: "state", request_id, data: getState(), timestamp: new Date().toISOString() }
 
+        case "show_slide":
+          setState(s => ({ ...s, currentSlide: payload.slide as number }))
+          return { type: "complete", request_id, timestamp: new Date().toISOString() }
+
+        case "hide_slide":
+          setState(s => ({ ...s, currentSlide: null }))
+          return { type: "complete", request_id, timestamp: new Date().toISOString() }
+
         case "wait":
           await sleep(payload.ms as number || 1000)
           return { type: "complete", request_id, timestamp: new Date().toISOString() }
@@ -627,6 +646,9 @@ export function usePresentationControl(options: UsePresentationControlOptions) {
     highlights: state.highlights,
     tooltips: state.tooltips,
     cards: state.cards,
+
+    // Slide presentation
+    currentSlide: state.currentSlide,
 
     // Actions
     clearOverlays,

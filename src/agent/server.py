@@ -28,7 +28,7 @@ from typing import Any, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from langchain_core.messages import HumanMessage
 
 from src.agent.graph import build_graph
@@ -393,6 +393,19 @@ _OUTPUT_PAGE_HTML = f"""<!DOCTYPE html>
 </html>"""
 
 
+@app.get("/slides/{n}")
+async def serve_slide(n: int):
+    """Serve a presentation slide JPEG so Recall.ai can load it as a screenshare URL."""
+    from src.agent.recall.slides import get_slide, TOTAL_SLIDES
+    if n < 1 or n > TOTAL_SLIDES:
+        return JSONResponse({"error": "slide not found"}, status_code=404)
+    b64 = get_slide(n)
+    if not b64:
+        return JSONResponse({"error": "slide not available"}, status_code=404)
+    import base64 as _b64
+    return Response(content=_b64.b64decode(b64), media_type="image/jpeg")
+
+
 @app.get("/recall/output/{bot_id}")
 async def recall_output_page(bot_id: str):
     """Serve the output-media HTML page. Recall.ai loads this in its headless browser."""
@@ -467,11 +480,10 @@ async def _recall_tts_sender(
     buffer = SentenceBuffer()
     connected = True
     pending_tts: list[asyncio.Task] = []
-    _first_audio_sent = False
-    _FIRST_AUDIO_DELAY_S = 1.5  # wait for the output-media page to load before speaking
+    _FIRST_AUDIO_DELAY_S = 8.0  # one-time delay per session so screenshare loads before speaking
 
     async def _send(text: str) -> None:
-        nonlocal connected, _first_audio_sent
+        nonlocal connected
         recall_session.log_bot_sentence(text)
         recall_session.bot_is_speaking = True
         log.info("[recall:tts] '%s...'", text[:60])
@@ -481,9 +493,9 @@ async def _recall_tts_sender(
             # synchronously on the event loop thread, blocking all other coroutines.
             audio = await tts.synthesize(text)
             if audio and connected:
-                if not _first_audio_sent:
+                if not recall_session.first_audio_sent:
                     await asyncio.sleep(_FIRST_AUDIO_DELAY_S)
-                    _first_audio_sent = True
+                    recall_session.first_audio_sent = True
                 if not await recall_session.send_tts_audio(audio):
                     connected = False
         except Exception:
@@ -675,45 +687,72 @@ _IN_CALL_STATUSES = {"in_call_not_recording", "in_call_recording"}
 _TERMINAL_STATUSES = {"call_ended", "done", "fatal", "recording_done"}
 
 
-async def _setup_bot_when_ready(bot_id: str) -> None:
-    """Background task: poll bot status and set avatar once the bot is in the call.
+async def _setup_bot_when_ready(real_bot_id: str, session_id: str) -> None:
+    """Background task: poll bot status and activate screenshare once the bot is in the call.
 
-    Screenshare is NOT activated here — the agent activates it explicitly via the
-    start_screenshare tool after confirming the ally can see the screen.
-    Only output_video (avatar frame) requires the bot to be in-call.
+    real_bot_id — Recall.ai bot ID (used to poll status and activate screenshare)
+    session_id  — internal session ID (used to look up RecallBotSession from registry)
+
+    When the bot joins the call, activates the frontend screenshare URL so Recall.ai
+    shares the Portal Partners page (which will render slides via SSE commands).
+    Slide 1 is then sent as an SSE command to the frontend so it displays immediately.
     Polls every 3 s (up to 2 min).
     """
-    from src.agent.recall.assets import ALIA_AVATAR_B64
+    import httpx
     from src.agent.recall.client import RecallClient
 
     client = RecallClient()
     deadline = time.monotonic() + 120
     poll_interval = 3
 
-    log.info("[recall:setup] Waiting for bot to join: bot=%s", bot_id)
+    log.info("[recall:setup] Waiting for bot to join: bot=%s session=%s", real_bot_id, session_id)
     while time.monotonic() < deadline:
         await asyncio.sleep(poll_interval)
         try:
-            bot = await client.get_bot(bot_id)
+            bot = await client.get_bot(real_bot_id)
             changes = bot.get("status_changes") or []
             status = changes[-1].get("code", "") if changes else ""
-            log.debug("[recall:setup] bot=%s status=%s", bot_id, status)
+            log.debug("[recall:setup] bot=%s status=%s", real_bot_id, status)
 
             if status in _IN_CALL_STATUSES:
-                if ALIA_AVATAR_B64:
-                    await client.update_output_video(bot_id, b64_data=ALIA_AVATAR_B64, kind="jpeg")
-                    log.info("[recall:setup] Avatar frame set: bot=%s", bot_id)
+                # Look up session by internal session_id (not real_bot_id).
+                recall_session = get_session(session_id)
+                if recall_session and recall_session.screenshare_url:
+                    # Activate the frontend URL as screenshare — slides render via SSE.
+                    await client.update_output_media(real_bot_id, screenshare_url=recall_session.screenshare_url)
+                    log.info("[recall:setup] Screenshare activated: bot=%s url=%s",
+                             real_bot_id, recall_session.screenshare_url)
+
+                    # Send show_slide(1) so the frontend displays slide 1 immediately.
+                    store_id = recall_session.store_id
+                    frontend_base = Config.FRONTEND_BASE_URL.rstrip("/")
+                    sse_url = (
+                        f"{frontend_base}/api/ai-socket/sse"
+                        f"?session_id={store_id}&token=rappi_ai_agent_2024"
+                    )
+                    try:
+                        async with httpx.AsyncClient(timeout=5.0) as http:
+                            await http.post(sse_url, json={
+                                "cmd": "show_slide",
+                                "payload": {"slide": 1},
+                                "request_id": f"setup_slide1_{store_id}",
+                            })
+                        log.info("[recall:setup] show_slide(1) sent to frontend: store=%s", store_id)
+                    except Exception as exc:
+                        log.warning("[recall:setup] Failed to send show_slide(1): %s", exc)
+                else:
+                    log.info("[recall:setup] No screenshare_url for session=%s, skipping", session_id)
 
                 return
 
             if status in _TERMINAL_STATUSES:
                 log.info("[recall:setup] Bot ended before joining, giving up: bot=%s status=%s",
-                         bot_id, status)
+                         real_bot_id, status)
                 return
         except Exception:
-            log.exception("[recall:setup] Error while waiting for bot: bot=%s", bot_id)
+            log.exception("[recall:setup] Error while waiting for bot: bot=%s", real_bot_id)
 
-    log.warning("[recall:setup] Timed out waiting for bot to join: bot=%s", bot_id)
+    log.warning("[recall:setup] Timed out waiting for bot to join: bot=%s", real_bot_id)
 
 
 @app.post("/recall/bots")
@@ -779,8 +818,8 @@ async def create_recall_bot(body: dict):
         if recall_session:
             recall_session.set_recall_bot(real_bot_id, screenshare_url)
 
-        # Sets avatar once the bot is in the call. Screenshare is NOT activated here.
-        asyncio.create_task(_setup_bot_when_ready(real_bot_id))
+        # Activates screenshare once the bot is in the call.
+        asyncio.create_task(_setup_bot_when_ready(real_bot_id, session_id))
 
         status_changes = bot.get("status_changes") or []
         status = status_changes[-1].get("code", "created") if status_changes else "created"

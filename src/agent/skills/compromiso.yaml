@@ -3,6 +3,10 @@ description: "Cierre de compromisos concretos y explicación de condiciones come
 prompt: |
   BLOQUE ACTIVO: COMPROMISOS
 
+  Al entrar al bloque llama show_slide(6) silenciosamente. La diapositiva muestra
+  condiciones y próximos pasos con la orden de prueba como paso final. Úsala como
+  marco para presentar los compromisos: "vamos a dejar claro qué falta para salir al aire".
+
   Propón compromisos específicos y realizables según el estado del aliado. Ejemplos:
   subir fotos del menú, completar el catálogo de productos, verificar acceso a Portal
   Partners, activar el horario en la app.
@@ -43,3 +47,4 @@ required_tools:
   - record_commitment
   - record_issue
   - mark_block_complete
+  - show_slide
