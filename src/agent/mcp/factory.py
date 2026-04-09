@@ -34,7 +34,7 @@ def create_all_tools(
         List of LangChain StructuredTool instances ready for LangGraph binding.
     """
     tools: list[StructuredTool] = []
-    tools.extend(create_store_tools(store_repo, meeting_repo, session_repo))
+    tools.extend(create_store_tools(store_repo, meeting_repo, session_repo, store_id=store_id))
     tools.extend(create_session_tools())
     tools.extend(create_meeting_tools(meeting_repo))
     tools.extend(create_presentation_tools(store_id))

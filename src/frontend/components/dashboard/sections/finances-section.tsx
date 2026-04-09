@@ -84,7 +84,7 @@ export function FinancesSection() {
           <h1 className="text-2xl font-bold text-foreground">Finanzas</h1>
           <p className="text-muted-foreground">Historial de pagos y dispersiones</p>
         </div>
-        <Button variant="outline">
+        <Button id="finances-download-report-btn" variant="outline">
           <Download className="mr-2 h-4 w-4" />
           Descargar Reporte
         </Button>
@@ -136,7 +136,7 @@ export function FinancesSection() {
       </div>
 
       {/* Visual Balance */}
-      <Card>
+      <Card id="finances-monthly-balance-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ArrowUpRight className="h-5 w-5" />

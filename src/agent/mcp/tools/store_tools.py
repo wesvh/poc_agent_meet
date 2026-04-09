@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 
 
-def create_store_tools(store_repo, meeting_repo, session_repo) -> list[StructuredTool]:
+def create_store_tools(store_repo, meeting_repo, session_repo, store_id: str = "") -> list[StructuredTool]:
     """Create store-related tools with injected repositories."""
 
     async def _get_store_context(store_id: str) -> dict:
@@ -61,8 +61,11 @@ def create_store_tools(store_repo, meeting_repo, session_repo) -> list[Structure
         valid = {"pendiente", "en_proceso", "completado"}
         if new_status not in valid:
             return {"error": True, "message": f"Invalid status '{new_status}'. Must be one of: {', '.join(valid)}", "reason": "invalid_status"}
-        # store_id will be injected by the node from session state
-        return {"_deferred": True, "field": "onboarding_status", "value": new_status}
+        try:
+            await store_repo.update_field(store_id, "onboarding_status", new_status)
+        except ValueError as exc:
+            return {"error": True, "message": str(exc), "reason": "update_failed"}
+        return {"success": True, "field": "onboarding_status", "value": new_status}
 
     async def _update_store_info(field: str, value: Any) -> dict:
         """Update a specific field on the current ally's store record.
@@ -79,7 +82,11 @@ def create_store_tools(store_repo, meeting_repo, session_repo) -> list[Structure
         protected = {"store_id", "data_quality_status", "validation_errors"}
         if field in protected:
             return {"error": True, "message": f"Cannot update protected field '{field}'", "reason": "protected_field"}
-        return {"_deferred": True, "field": field, "value": value}
+        try:
+            await store_repo.update_field(store_id, field, value)
+        except ValueError as exc:
+            return {"error": True, "message": str(exc), "reason": "update_failed"}
+        return {"success": True, "field": field, "value": value}
 
     return [
         StructuredTool.from_function(

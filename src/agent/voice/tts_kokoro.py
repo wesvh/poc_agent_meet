@@ -46,6 +46,22 @@ class KokoroTTS:
         log.info("[tts:kokoro] Loading model: %s | voice: %s | lang: %s", self.model_path, self.voice, self.lang)
         self._kokoro = Kokoro(self.model_path, self.voices_path)
 
+    def _warmup_sync(self) -> None:
+        """Load model and run one short synthesis to JIT the ONNX kernels."""
+        self._load()
+        try:
+            self._kokoro.create("Hola.", voice=self.voice, speed=self.speed, lang=self.lang)
+            log.info("[tts:kokoro] Warmup complete — model and ONNX kernels ready")
+        except Exception:
+            log.warning("[tts:kokoro] Warmup synthesis failed (model is loaded, JIT skipped)")
+
+    async def warmup(self) -> None:
+        """Pre-load model in a thread so the first real synthesis has no cold-start lag."""
+        if self._kokoro is not None:
+            return
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._warmup_sync)
+
     @staticmethod
     def _samples_to_wav(samples, sample_rate: int) -> bytes:
         import numpy as np

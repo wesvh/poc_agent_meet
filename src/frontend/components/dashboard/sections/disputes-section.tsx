@@ -279,7 +279,7 @@ export function DisputesSection() {
 
       {/* Create Dispute Modal */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent>
+        <DialogContent id="dispute-create-modal">
           <DialogHeader>
             <DialogTitle>Nueva Disputa</DialogTitle>
             <DialogDescription>
@@ -290,6 +290,7 @@ export function DisputesSection() {
             <Field>
               <FieldLabel>ID de la Orden</FieldLabel>
               <Input
+                id="dispute-order-id"
                 placeholder="ORD-2024-XXX"
                 value={newDispute.orderId}
                 onChange={(e) =>
@@ -305,7 +306,7 @@ export function DisputesSection() {
                   setNewDispute((prev) => ({ ...prev, reason: value }))
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger id="dispute-reason">
                   <SelectValue placeholder="Selecciona un motivo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -320,6 +321,7 @@ export function DisputesSection() {
             <Field>
               <FieldLabel>Descripción</FieldLabel>
               <Textarea
+                id="dispute-description"
                 placeholder="Describe el problema con el mayor detalle posible..."
                 rows={4}
                 value={newDispute.description}
@@ -330,10 +332,11 @@ export function DisputesSection() {
             </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+            <Button id="dispute-cancel-btn" variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancelar
             </Button>
             <Button
+              id="dispute-submit-btn"
               onClick={handleCreateDispute}
               disabled={!newDispute.orderId || !newDispute.reason}
               className="bg-[#FF4940] text-white hover:bg-[#E63E36]"

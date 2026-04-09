@@ -101,6 +101,7 @@ export function SupportSection() {
           <div className="relative mb-6">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id="support-faq-search-input"
               placeholder="Buscar en preguntas frecuentes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -186,7 +187,7 @@ export function SupportSection() {
 
       {/* Chat Modal Simulation */}
       {chatOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div id="support-chat-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <Card className="w-full max-w-md">
             <CardHeader className="border-b border-border">
               <div className="flex items-center justify-between">

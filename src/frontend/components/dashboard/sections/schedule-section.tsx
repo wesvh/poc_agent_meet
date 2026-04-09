@@ -55,11 +55,12 @@ export function ScheduleSection() {
         <div className="flex gap-2">
           {hasChanges && (
             <>
-              <Button variant="outline" onClick={resetChanges}>
+              <Button id="schedule-discard-btn" variant="outline" onClick={resetChanges}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Descartar
               </Button>
               <Button
+                id="schedule-save-btn"
                 onClick={saveChanges}
                 className="bg-[#FF4940] text-white hover:bg-[#E63E36]"
               >
@@ -139,6 +140,7 @@ export function ScheduleSection() {
         <CardContent>
           <div className="flex flex-wrap gap-2">
             <Button
+              id="schedule-open-all-btn"
               variant="outline"
               onClick={() => {
                 setSchedule((prev) =>
@@ -150,6 +152,7 @@ export function ScheduleSection() {
               Abrir todos los días
             </Button>
             <Button
+              id="schedule-weekdays-btn"
               variant="outline"
               onClick={() => {
                 setSchedule((prev) =>
@@ -164,6 +167,7 @@ export function ScheduleSection() {
               Solo días laborales
             </Button>
             <Button
+              id="schedule-standard-hours-btn"
               variant="outline"
               onClick={() => {
                 setSchedule((prev) =>

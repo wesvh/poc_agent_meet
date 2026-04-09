@@ -25,6 +25,8 @@ import uuid
 from functools import partial
 from typing import Any, Awaitable, Callable
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from langchain_core.messages import HumanMessage
@@ -38,6 +40,7 @@ from src.agent.recall.bridge import (
     get_session,
     register_session,
     remove_session,
+    get_session_by_store,
 )
 from src.agent.state import HandoffState
 from src.agent.streaming import DISCONNECT, END_OF_STREAM, set_token_queue
@@ -56,7 +59,19 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="Handoff Agent", version="1.0.0")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Warm up the TTS model at startup to eliminate cold-start audio lag."""
+    from src.agent.voice.tts import get_tts
+    tts = get_tts()
+    if hasattr(tts, "warmup"):
+        log.info("[startup] Warming up TTS model...")
+        await tts.warmup()
+    yield
+
+
+app = FastAPI(title="Handoff Agent", version="1.0.0", lifespan=_lifespan)
 
 _store_repo = SqlAlchemyStoreRepo()
 _meeting_repo = SqlAlchemyMeetingRepo()
@@ -440,24 +455,36 @@ async def _recall_tts_sender(
     Echo prevention is handled upstream: Recall.ai labels transcripts with participant
     info, so the bot's own voice is filtered by name before reaching agent_inbox.
     No timing hacks needed here.
+
+    Performance notes:
+    - synthesize() is used instead of synthesize_stream() because synthesize() offloads
+      ONNX inference to the thread pool via run_in_executor, keeping the event loop free.
+      synthesize_stream() runs ONNX inference synchronously on the event loop thread.
+    - Each sentence is launched as a background task (create_task) so the token loop
+      remains responsive while synthesis runs in the thread pool. The previous task is
+      always awaited before starting the next one to preserve audio order.
     """
     buffer = SentenceBuffer()
     connected = True
+    pending_tts: list[asyncio.Task] = []
+    _first_audio_sent = False
+    _FIRST_AUDIO_DELAY_S = 1.5  # wait for the output-media page to load before speaking
 
     async def _send(text: str) -> None:
-        nonlocal connected
+        nonlocal connected, _first_audio_sent
         recall_session.log_bot_sentence(text)
         recall_session.bot_is_speaking = True
         log.info("[recall:tts] '%s...'", text[:60])
         try:
-            if hasattr(tts, "synthesize_stream"):
-                async for chunk, _ in tts.synthesize_stream(text):
-                    if connected and not await recall_session.send_tts_audio(chunk):
-                        connected = False
-                        break
-            else:
-                audio = await tts.synthesize(text)
-                if audio and not await recall_session.send_tts_audio(audio):
+            # synthesize() offloads ONNX inference to thread pool (run_in_executor).
+            # synthesize_stream() is intentionally avoided here — it runs inference
+            # synchronously on the event loop thread, blocking all other coroutines.
+            audio = await tts.synthesize(text)
+            if audio and connected:
+                if not _first_audio_sent:
+                    await asyncio.sleep(_FIRST_AUDIO_DELAY_S)
+                    _first_audio_sent = True
+                if not await recall_session.send_tts_audio(audio):
                     connected = False
         except Exception:
             log.exception("[recall:tts] synthesis error: '%s...'", text[:40])
@@ -471,7 +498,12 @@ async def _recall_tts_sender(
         if item is END_OF_STREAM:
             remaining = buffer.flush()
             if remaining and connected:
-                await _send(remaining)
+                if pending_tts:
+                    await asyncio.gather(*pending_tts, return_exceptions=True)
+                    pending_tts.clear()
+                pending_tts.append(asyncio.create_task(_send(remaining)))
+            if pending_tts:
+                await asyncio.gather(*pending_tts, return_exceptions=True)
             break
 
         msg_type, payload = item
@@ -481,12 +513,22 @@ async def _recall_tts_sender(
         if msg_type == "token":
             sentence = buffer.add_token(payload)
             if sentence:
-                await _send(sentence)
+                if pending_tts:
+                    await asyncio.gather(*pending_tts, return_exceptions=True)
+                    pending_tts.clear()
+                pending_tts.append(asyncio.create_task(_send(sentence)))
 
         elif msg_type == "message_end":
             remaining = buffer.flush()
             if remaining and connected:
-                await _send(remaining)
+                if pending_tts:
+                    await asyncio.gather(*pending_tts, return_exceptions=True)
+                    pending_tts.clear()
+                pending_tts.append(asyncio.create_task(_send(remaining)))
+            # Drain all pending audio before signaling message_end
+            if pending_tts:
+                await asyncio.gather(*pending_tts, return_exceptions=True)
+                pending_tts.clear()
 
 
 # ─── RECALL.AI — AUDIO STREAM WEBSOCKET ──────────────────────────────────
@@ -633,11 +675,12 @@ _IN_CALL_STATUSES = {"in_call_not_recording", "in_call_recording"}
 _TERMINAL_STATUSES = {"call_ended", "done", "fatal", "recording_done"}
 
 
-async def _setup_bot_when_ready(bot_id: str, screenshare_url: str | None) -> None:
-    """Background task: poll bot status and activate outputs once in call.
+async def _setup_bot_when_ready(bot_id: str) -> None:
+    """Background task: poll bot status and set avatar once the bot is in the call.
 
-    Sets screenshare (if provided) and avatar frame as soon as the bot joins.
-    Both output_media and output_video endpoints require the bot to be in-call.
+    Screenshare is NOT activated here — the agent activates it explicitly via the
+    start_screenshare tool after confirming the ally can see the screen.
+    Only output_video (avatar frame) requires the bot to be in-call.
     Polls every 3 s (up to 2 min).
     """
     from src.agent.recall.assets import ALIA_AVATAR_B64
@@ -657,10 +700,6 @@ async def _setup_bot_when_ready(bot_id: str, screenshare_url: str | None) -> Non
             log.debug("[recall:setup] bot=%s status=%s", bot_id, status)
 
             if status in _IN_CALL_STATUSES:
-                if screenshare_url:
-                    await client.update_output_media(bot_id, screenshare_url=screenshare_url)
-                    log.info("[recall:setup] Screenshare active: bot=%s url=%s", bot_id, screenshare_url)
-
                 if ALIA_AVATAR_B64:
                     await client.update_output_video(bot_id, b64_data=ALIA_AVATAR_B64, kind="jpeg")
                     log.info("[recall:setup] Avatar frame set: bot=%s", bot_id)
@@ -734,8 +773,14 @@ async def create_recall_bot(body: dict):
         log.info("[recall] Bot created: recall_id=%s session=%s store=%s screenshare=%s",
                  real_bot_id, session_id, store_id, screenshare_url or "none")
 
-        # Always fire: sets screenshare + avatar once the bot is in the call.
-        asyncio.create_task(_setup_bot_when_ready(real_bot_id, screenshare_url))
+        # Store recall_bot_id and screenshare_url in the session so the agent can
+        # activate screenshare on demand via the start_screenshare tool.
+        recall_session = get_session(session_id)
+        if recall_session:
+            recall_session.set_recall_bot(real_bot_id, screenshare_url)
+
+        # Sets avatar once the bot is in the call. Screenshare is NOT activated here.
+        asyncio.create_task(_setup_bot_when_ready(real_bot_id))
 
         status_changes = bot.get("status_changes") or []
         status = status_changes[-1].get("code", "created") if status_changes else "created"

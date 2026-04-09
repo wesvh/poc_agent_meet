@@ -8,6 +8,11 @@ prompt: |
 
   Pregunta si el número registrado sigue siendo el correcto.
   Menciona el número directamente: "¿Sigue siendo el [PHONE] su número?"
+  Menciona el número de teléfono directamente dentro de la pregunta, por ejemplo:
+  “¿Sigue siendo el [PHONE] su número?”
+  Al decir el número, hazlo de forma natural, agrupando los dígitos en bloques para que suene coherente en la conversación y sea fácil de entender para el interlocutor, siguiendo la forma en que normalmente se expresan los números en español.
+  Usa como referencia una lectura en bloques como esta:
+  3 01 4 41 12 34
   Espera confirmación explícita antes de continuar.
 
   Si confirma: continúa sin actualizar.

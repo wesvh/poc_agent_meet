@@ -73,6 +73,7 @@ export function ForgotPasswordForm({ onBack }: ForgotPasswordFormProps) {
     <Card className="w-full max-w-md border-0 shadow-2xl">
       <CardHeader className="pb-2">
         <button
+          id="forgot-back-btn"
           onClick={onBack}
           className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
@@ -112,6 +113,7 @@ export function ForgotPasswordForm({ onBack }: ForgotPasswordFormProps) {
           </Field>
 
           <Button
+            id="forgot-submit-btn"
             type="submit"
             disabled={isLoading}
             className="h-11 w-full bg-[#FF4940] text-white hover:bg-[#E63E36]"

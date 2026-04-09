@@ -1,5 +1,6 @@
 x-airflow-common: &airflow-common
   image: rappi-airflow:latest
+  pull_policy: never
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"

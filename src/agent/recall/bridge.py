@@ -152,6 +152,10 @@ class RecallBotSession:
         self.store_id  = store_id
         self.bot_name  = bot_name   # matched against participant.name to drop bot audio
 
+        # Set after the Recall.ai bot is created — needed to activate screenshare on demand.
+        self.recall_bot_id: str = ""
+        self.screenshare_url: str | None = None
+
         self.agent_inbox: asyncio.Queue = asyncio.Queue()
         self._output_ws: WebSocket | None = None
         self._output_ws_ready: asyncio.Event = asyncio.Event()
@@ -165,6 +169,11 @@ class RecallBotSession:
 
         # Secondary echo filter: (monotonic_ts, frozenset_of_words) per bot sentence
         self._recent_bot_sentences: deque[tuple[float, frozenset[str]]] = deque(maxlen=30)
+
+    def set_recall_bot(self, recall_bot_id: str, screenshare_url: str | None) -> None:
+        """Store the Recall.ai bot ID and screenshare URL once the bot is created."""
+        self.recall_bot_id = recall_bot_id
+        self.screenshare_url = screenshare_url
 
     # ── Per-participant audio buffers ─────────────────────────────────────────
 
@@ -245,11 +254,13 @@ class RecallBotSession:
 # ─── Registry ─────────────────────────────────────────────────────────────────
 
 _sessions: Dict[str, RecallBotSession] = {}
+_sessions_by_store: Dict[str, RecallBotSession] = {}
 
 
 def register_session(bot_id: str, store_id: str, bot_name: str = "") -> RecallBotSession:
     session = RecallBotSession(bot_id, store_id, bot_name=bot_name)
     _sessions[bot_id] = session
+    _sessions_by_store[store_id] = session
     log.info("[recall:bridge] Registered session bot=%s store=%s", bot_id, store_id)
     return session
 
@@ -258,6 +269,13 @@ def get_session(bot_id: str) -> RecallBotSession | None:
     return _sessions.get(bot_id)
 
 
+def get_session_by_store(store_id: str) -> RecallBotSession | None:
+    """Look up the active Recall session for a given store_id."""
+    return _sessions_by_store.get(store_id)
+
+
 def remove_session(bot_id: str) -> None:
-    _sessions.pop(bot_id, None)
+    session = _sessions.pop(bot_id, None)
+    if session:
+        _sessions_by_store.pop(session.store_id, None)
     log.info("[recall:bridge] Removed session bot=%s", bot_id)

@@ -17,14 +17,19 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // Get current section from query param
-  const section = searchParams.get("section") || "dashboard"
+  const requestedScreen =
+    searchParams.get("screen") ||
+    searchParams.get("section") ||
+    (searchParams.get("authenticated") === "true"
+      ? "dashboard"
+      : searchParams.get("auth_view") || "login")
   const storeId = searchParams.get("store_id") || null
   const storeName = searchParams.get("store_name") || null
   const isAuthenticated = searchParams.get("authenticated") === "true"
 
   // Get base context for the section
-  const baseContext = screenContexts[section] || screenContexts.dashboard
+  const resolvedScreen = screenContexts[requestedScreen] ? requestedScreen : "dashboard"
+  const baseContext = screenContexts[resolvedScreen]
 
   // Build user context
   const userContext: ScreenContext["user_context"] = {
@@ -37,7 +42,16 @@ export async function GET(request: NextRequest) {
   const payload: AIContextPayload = {
     screen: {
       ...baseContext,
-      current_path: `/${section === "dashboard" ? "" : section}`,
+      current_path:
+        resolvedScreen === "dashboard"
+          ? "/"
+          : resolvedScreen === "login"
+            ? "/auth/login"
+            : resolvedScreen === "register"
+              ? "/auth/register"
+              : resolvedScreen === "forgot-password"
+                ? "/auth/forgot-password"
+                : `/${resolvedScreen}`,
       user_context: userContext,
       timestamp: new Date().toISOString(),
     },
@@ -50,7 +64,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(payload, {
     headers: {
       "Content-Type": "application/json",
-      "X-AI-Context-Version": "1.0",
+      "X-AI-Context-Version": "2.0",
       "Access-Control-Allow-Origin": "*",
     },
   })

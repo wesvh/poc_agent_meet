@@ -86,7 +86,7 @@ export function CatalogSection() {
           <h1 className="text-2xl font-bold text-foreground">Catálogo</h1>
           <p className="text-muted-foreground">Gestiona tus productos y complementos</p>
         </div>
-        <Button className="bg-[#FF4940] text-white hover:bg-[#E63E36]">
+        <Button id="catalog-add-product-btn" className="bg-[#FF4940] text-white hover:bg-[#E63E36]">
           <Plus className="mr-2 h-4 w-4" />
           Agregar Producto
         </Button>
@@ -96,6 +96,7 @@ export function CatalogSection() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          id="catalog-search-input"
           placeholder="Buscar productos..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -188,7 +189,7 @@ export function CatalogSection() {
 
       {/* Edit Modal */}
       <Dialog open={!!editingProduct} onOpenChange={() => setEditingProduct(null)}>
-        <DialogContent>
+        <DialogContent id="catalog-edit-product-modal">
           <DialogHeader>
             <DialogTitle>Editar Producto</DialogTitle>
             <DialogDescription>
@@ -199,6 +200,7 @@ export function CatalogSection() {
             <Field>
               <FieldLabel>Nombre</FieldLabel>
               <Input
+                id="catalog-edit-name"
                 value={editForm.name}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
               />
@@ -206,6 +208,7 @@ export function CatalogSection() {
             <Field>
               <FieldLabel>Precio (COP)</FieldLabel>
               <Input
+                id="catalog-edit-price"
                 type="number"
                 value={editForm.price}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, price: Number(e.target.value) }))}
@@ -214,6 +217,7 @@ export function CatalogSection() {
             <Field>
               <FieldLabel>Stock</FieldLabel>
               <Input
+                id="catalog-edit-stock"
                 type="number"
                 value={editForm.stock}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, stock: Number(e.target.value) }))}
@@ -221,10 +225,10 @@ export function CatalogSection() {
             </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProduct(null)}>
+            <Button id="catalog-cancel-edit-btn" variant="outline" onClick={() => setEditingProduct(null)}>
               Cancelar
             </Button>
-            <Button onClick={saveProduct} className="bg-[#FF4940] text-white hover:bg-[#E63E36]">
+            <Button id="catalog-save-product-btn" onClick={saveProduct} className="bg-[#FF4940] text-white hover:bg-[#E63E36]">
               Guardar Cambios
             </Button>
           </DialogFooter>

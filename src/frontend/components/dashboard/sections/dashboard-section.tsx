@@ -90,6 +90,7 @@ export function DashboardSection() {
           <p className="text-muted-foreground">Resumen de tu negocio hoy</p>
         </div>
         <Button
+          id="dashboard-simulate-order-btn"
           onClick={simulateNewOrder}
           className="bg-[#FF4940] text-white hover:bg-[#E63E36]"
         >
@@ -99,7 +100,7 @@ export function DashboardSection() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div id="dashboard-metrics-grid" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="flex items-center gap-4 p-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#FFF5F5]">
@@ -182,7 +183,7 @@ export function DashboardSection() {
       </div>
 
       {/* Recent Orders */}
-      <Card>
+      <Card id="dashboard-recent-orders">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
