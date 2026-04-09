@@ -20,6 +20,8 @@ Sistema completo de onboarding para aliados de Rappi. Ingesta un CSV de aliados,
 12. [Configuración inicial](#12-configuración-inicial)
 13. [Comandos de referencia](#13-comandos-de-referencia)
 14. [Puertos locales](#14-puertos-locales)
+15. [Almacenamiento S3 — Estructura de buckets](#15-almacenamiento-s3--estructura-de-buckets)
+16. [Decisiones Técnicas y Trade-offs](#16-decisiones-técnicas-y-trade-offs)
 
 ---
 
@@ -142,6 +144,45 @@ EventBridge Scheduler → programación temporal de sesiones del agente (one-sho
 | `store_payment_methods` | Tabla N:M normalizada de métodos de pago por tienda |
 | `store_schedule_days` | Días de operación normalizados (lunes…domingo) |
 | `meetings` | Reuniones programadas por tienda, FK a `stores` |
+| `handoff_sessions` | Sesiones del agente de IA — transcripción, bloques completados, compromisos, resumen |
+
+### Esquema de relaciones
+
+```
+etl_runs ──┬──► etl_errors      (errores de validación por run)
+           └──► stg_stores_raw  (filas crudas del CSV)
+
+stores ────┬──► store_payment_methods  (métodos de pago, N:M)
+           ├──► store_schedule_days    (días de operación, N:M)
+           ├──► meetings               (reuniones programadas)
+           └──► handoff_sessions       (sesiones del agente IA)
+
+meetings ──────► handoff_sessions      (sesión vinculada a la reunión)
+```
+
+### Columnas clave de `stores`
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `store_id` | text PK | Identificador único del aliado |
+| `onboarding_status` | enum | `pendiente` \| `en_proceso` \| `completado` |
+| `is_ready_for_handoff` | bool | `true` si tiene phone, email, meeting_link y scheduled_at válidos |
+| `data_quality_status` | enum | `valid` \| `invalid` \| `warning` |
+| `validation_errors` | JSONB | Lista de errores de validación del ETL |
+
+### Columnas clave de `handoff_sessions`
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `id` | UUID PK | ID de sesión |
+| `store_id` | text FK | Aliado atendido |
+| `meeting_id` | UUID FK | Reunión asociada (nullable) |
+| `status` | enum | `active` \| `completed` \| `abandoned` |
+| `blocks_completed` | JSONB | `{"saludo": true, "verificacion": false, ...}` |
+| `issues_detected` | JSONB | Lista de problemas detectados durante la sesión |
+| `commitments` | JSONB | Lista de compromisos acordados con el aliado |
+| `transcript` | JSONB | Historial completo de mensajes |
+| `turn_count` | int | Número de turnos de la conversación |
 
 ### Credenciales locales
 
@@ -550,6 +591,134 @@ source .venv/bin/activate
 | `8003` | Frontend SPA | `http://localhost:8003` |
 | `8080` | Airflow UI | `http://localhost:8080` |
 | `8081` | Adminer (profile `debug`) | `http://localhost:8081` |
+
+---
+
+## 15. Almacenamiento S3 — Estructura de buckets
+
+En desarrollo los buckets corren en **LocalStack** (`http://localhost:4566`). En producción se apunta a AWS real quitando `LOCALSTACK_ENDPOINT`.
+
+### Buckets
+
+| Bucket | Variable | Propósito |
+|---|---|---|
+| `rappi-handoff-raw` | `S3_RAW_BUCKET` | Recibe el CSV original que sube el endpoint `/upload`. Trigger de EventBridge al recibir un objeto `.csv`. |
+| `rappi-handoff-archive` | `S3_ARCHIVE_BUCKET` | Copia inmutable del CSV con hash SHA-256 verificado, generada por el DAG ETL. |
+
+### Estructura de paths
+
+```
+rappi-handoff-raw/
+  raw/
+    20260409_143022_aliados_dataset.csv   ← sube ingest con timestamp prefijo
+
+rappi-handoff-archive/
+  archive/
+    <etl_run_id>/
+      aliados_dataset.csv                 ← copia del DAG, integridad verificada
+```
+
+### Ciclo de vida de un archivo
+
+```
+1. POST /upload → ingest sube CSV a rappi-handoff-raw/raw/<timestamp>_<name>.csv
+2. EventBridge detecta ObjectCreated → dispara DAG etl_stores_csv
+3. DAG lee el objeto raw, calcula SHA-256, copia a rappi-handoff-archive/archive/<run_id>/<name>.csv
+4. DAG registra ruta y hash en etl_runs.s3_raw_key
+5. El objeto raw puede ser borrado o archivado en cold storage tras procesamiento
+```
+
+### Servicios AWS emulados por LocalStack
+
+| Servicio AWS | Uso en el sistema |
+|---|---|
+| **S3** | Almacenamiento de CSVs raw y archive |
+| **EventBridge Rules** | Regla `rappi-s3-object-created-csv` → dispara DAG Airflow cuando llega un CSV |
+| **EventBridge Scheduler** | Schedules one-shot por meeting → evento `MeetingDue` antes de cada sesión |
+| **IAM** | Rol `rappi-eventbridge-invoke-airflow` para que EventBridge llame al API de Airflow |
+| **STS / Secrets Manager** | Disponibles en LocalStack, no usados activamente en desarrollo |
+
+---
+
+## 16. Decisiones Técnicas y Trade-offs
+
+### LiteLLM como capa de abstracción LLM
+
+**Decisión:** Todas las llamadas a LLM pasan por LiteLLM con `drop_params=True`.
+
+**Por qué:** Cambiar de proveedor (OpenAI → Anthropic → Groq) requiere solo editar una variable de entorno, sin tocar código. Fundamental en etapas de validación.
+
+**Trade-off:** Agrega indirección. Para features muy específicas de un proveedor puede ser necesario el SDK nativo.
+
+---
+
+### LangGraph con checkpointer en PostgreSQL
+
+**Decisión:** El estado del grafo conversacional persiste en PostgreSQL via `AsyncPostgresSaver`.
+
+**Por qué:** Reconexiones WebSocket retoman la sesión sin perder contexto. Permite auditoría completa del estado en cualquier turno.
+
+**Trade-off:** Cada turno hace I/O a PostgreSQL. En sesiones muy cortas (< 3 turnos) el overhead es perceptible pero aceptable.
+
+---
+
+### Sistema prompt construido una sola vez
+
+**Decisión:** `load_context()` construye el system prompt en el turno 0 y lo persiste. Los turnos siguientes lo usan tal cual, sin reconstrucción.
+
+**Por qué:** Evita retokenizar el prompt en cada turno. Activa el prompt caching automático de OpenAI al tener el mismo prefijo estable (90% de descuento en GPT-5.4).
+
+**Trade-off:** Si los datos del aliado cambian durante la sesión, el agente no los verá. Se mitiga con la tool `get_store_context` que puede llamar explícitamente.
+
+---
+
+### Skill transitions ligeras en lugar de rebuild completo
+
+**Decisión:** Al completar un bloque, se inyecta solo un `SystemMessage` con el checklist actualizado y las instrucciones del nuevo skill (~300 tokens). No se reconstruye el prompt completo (~1,000 tokens).
+
+**Por qué:** Reduce tokens enviados en cada transición de bloque (ocurre hasta 8 veces por sesión).
+
+**Trade-off:** El agente no ve el contexto completo de la tienda al avanzar de bloque — pero lo tiene en su historial de mensajes reciente.
+
+---
+
+### Kokoro ONNX como TTS local
+
+**Decisión:** TTS por defecto es Kokoro-82M corriendo en CPU dentro del contenedor del agente.
+
+**Por qué:** Latencia de red cero, costo $0, calidad comparable a OpenAI TTS-1 en español colombiano.
+
+**Trade-off:** +336 MB a la imagen Docker. En hardware sin AVX2 puede ser más lento que la API. Configurable con `TTS_BACKEND=openai`.
+
+---
+
+### Polling cada 1 s en lugar de SSE para el frontend
+
+**Decisión:** El frontend hace `fetch` a `/api/ai-socket/poll` cada segundo en lugar de mantener una conexión SSE.
+
+**Por qué:** Los Quick Tunnels de Cloudflare bufferean todas las respuestas streaming independientemente de los headers (`CF-No-Buffer`, `X-Accel-Buffering`). El polling resuelve esto definitivamente.
+
+**Trade-off:** Latencia de hasta 1 s entre que el agente emite un comando y el frontend lo ejecuta. Aceptable para demos visuales.
+
+---
+
+### demo_portal como fire-and-forget
+
+**Decisión:** Los comandos al frontend se despachan con `asyncio.create_task()` y la tool retorna inmediatamente.
+
+**Por qué:** Si el agente llama `demo_portal` mientras Kokoro sintetiza audio, esperar confirmación HTTP bloquearía el pipeline de voz y causaría stuttering.
+
+**Trade-off:** El agente no confirma si los comandos llegaron. Los errores se loguean en background.
+
+---
+
+### Message trimmer basado en `len()`
+
+**Decisión:** El trimmer usa `token_counter=len` (cuenta caracteres) con límite de 4,000.
+
+**Por qué:** Evita la dependencia de `tiktoken`. A ~4 chars/token el error es < 15%.
+
+**Trade-off:** El límite real en tokens OpenAI es ~1,000. Para sesiones > 50 turnos el contexto queda más corto de lo ideal. Reemplazar con `tiktoken` daría control preciso.
 
 ---
 
